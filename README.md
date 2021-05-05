@@ -5,9 +5,13 @@ A Discord bot that simulates speed dating.
 1. `git clone` this repo
 2. `cd` into the local folder
 3. `pip install -r requirements.txt` --> this will download all the required modules; if you are using Python 3 >= 3.4 downloaded from python.org then you should already have pip
-4. log in to the Discord Developer Portal and create an application
-5. make a bot in the Bot tab and copy the token
-6. create a .env file in your local folder; write `DISCORD_TOKEN=token`, where `token` is your personalized bot token from step 5
-7. go to the OAuth2 tab in the Portal and under the URL Generator, set bot as the scope
-8. under bot permissions, set the appropriate permissions
-9. copy the link under URL generator and paste into browser; add bot to desired server!
+4. Log in to the Discord Developer Portal and create an application
+5. Make a bot in the Bot tab and copy the token
+6. Create a `.env` file in your local folder; write `DISCORD_TOKEN=token`, where `token` is your personalized bot token from step 5
+7. Go to the OAuth2 tab in the Portal and under the URL Generator, set bot as the scope
+8. Under bot permissions, set the appropriate permissions
+9. Copy the link under URL generator and paste into browser, then follow the steps to add the bot to your desired server!
+10. To run the bot, simply run `python bot.py` while in the folder.
+
+
+To see a list of commands, just type `!help` in the server you've added the bot to.
