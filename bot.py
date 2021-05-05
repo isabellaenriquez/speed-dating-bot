@@ -4,6 +4,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 from discord.ext.commands import Bot
 import random
+import asyncio
 
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
@@ -12,6 +13,17 @@ GUILD = os.getenv('GUILD')
 class SpeedDatingPool():
     def __init__(self, participants=[]):
         self.participants = participants
+        self.ended = True # set to true when speed dating game is ended
+        self.channels = []
+        self.rounds = None
+        self.interval = None
+    
+    def reset_pool(self):
+        self.participants = []
+        self.ended = True
+        self.channels = []
+        self.rounds = None
+        self.interval = None
     
     def remove_member(self, user):
         if not user:
@@ -24,11 +36,10 @@ class SpeedDatingPool():
         
         return False
 
+#IMPORTANT GLOBAL VARIABLES
 pool = SpeedDatingPool()
 
 bot = Bot(command_prefix='!')
-
-
 
 
 ''' Bot command: Gets the number of members in a given Voice Channel id.
@@ -53,12 +64,15 @@ async def get_participants(ctx):
 
 ''' Bot command: begins a speed dating group shuffle.
 '''
-@bot.command(name='begin_shuffle', help='starts a speed dating group')
+@bot.command(name='begin', help='starts a speed dating group')
 #@commmands.has_role('TC')
 async def begin_shuffle(ctx, channel_id=None):
     # command author + channel
     author = ctx.message.author
     command_channel = ctx.message.channel
+
+    # initialize
+    pool.ended = False
 
     if not channel_id:
         await ctx.send('Please specify which channel you\'d like to start the group in!')
@@ -73,31 +87,116 @@ async def begin_shuffle(ctx, channel_id=None):
     # check if next message sent was by the author who sent the original command and in the same channel
     def check(m):
         return m.author == author and m.channel == ctx.message.channel
+    
+    
+    rounds = 'g' # if 3 or more invalid inputs, exit speed dating start attempt
+    fail_count = 0
+    while (not rounds.isdigit() and rounds != 'none') and fail_count < 3:
+        await ctx.send('Number of rounds? Type \'none\' if you want to manually end speed dating for an indeterminate number of rounds.') # make an option to have no rounds and just use force shuffle
+        msg = await bot.wait_for('message', check=check)
+        rounds = msg.content
+        fail_count += 1
 
+    if fail_count >= 3:
+        await ctx.send('Too many invalid inputs. Please restart :(')
+        return
+    
+    if rounds == 'none':
+        rounds_str = 'Unset'
+    else:
+        rounds_str = rounds
+        pool.rounds = int(rounds)
+
+    fail_count = 0 
     time = 'hello'
-    while not time.isdigit(): # while a valid time hasnt been entered
-        await ctx.send('Shuffle time (in seconds)?')
+    while (not time.isdigit() and time != 'none') and fail_count < 3: # while a valid time hasnt been entered
+        await ctx.send('Shuffle time (in seconds) type \'none\' if you want to manually shuffle)?')
         msg = await bot.wait_for('message', check=check)
         time = msg.content
-    await ctx.send(f'Shuffle interval: {time} seconds. Let\'s speed date! ;)))')
-    # TODO: actually set the interval somehow
+        fail_count += 1
     
-    await shuffle(ctx)
+    if fail_count >= 3:
+        await ctx.send('Too many invalid inputs. Please restart :(')
+        return
+        
+    if time == 'none':
+        time_str = 'Unset'
+    else:
+        time_str = time + ' seconds'
+        pool.interval = int(time)
+    
+    await ctx.send(f'Shuffle interval: {time_str}. Number of rounds: {rounds_str}. Let\'s speed date! ;)))') # announcement to start
+
+    if time == 'none':
+        await ctx.send('Beginning round #1')
+        await shuffle(ctx)
+        await ctx.send('To shuffle again, the command author must type \'!shuffle\' in this channel. To end, type \'!end\'.')
+    else: # timed shuffles
+        if rounds == 'none':
+            played = 1 # number of rounds played
+            while not pool.ended:#and len(pool.participants > 3):
+                await ctx.send(f'Beginning round #{played}')
+                await shuffle(ctx) # TODO: set interval somehow
+                played += 1
+                await asyncio.sleep(pool.interval)
+        else:
+            total_rounds = pool.rounds
+            print(f'{total_rounds} rounds with intervals of {time_str} seconds.')
+            while pool.rounds > 0 and not pool.ended: # and len(pool.participants > 3): # idk if this is valid
+                await ctx.send(f'Beginning round #{total_rounds - pool.rounds + 1}')
+                await shuffle(ctx) # TODO: set interval somehow
+                await asyncio.sleep(pool.interval)
+            
+    
+        if not pool.ended: # game wasn't manually ended or # of participants not enough
+            await end_game(ctx)
+        
+        
+''' Bot command: force end game.
+'''
+@bot.command(name='end', help='forces the game to end')
+#@commands.has_role('TC')
+async def force_end(ctx):
+    if pool.ended:
+        await ctx.send('No on-going game.')
+    else:
+        await end_game(ctx)
+
+async def end_game(ctx):
+    if len(pool.participants) <= 3:
+        await ctx.send('Ended speed dating because we need at least 4 people :\'(')
+    else:
+        await ctx.send('Speed dating ended! Thanks for participating!')
+
+    # delete all channels that were created
+    for c in pool.channels:
+        await c.delete() # doesn't work TODO
+    
+    pool.reset_pool()
+    await ctx.send('Cleanup completed :)')
 
 ''' Bot command: forces a shuffle.
 '''
-@bot.command(name='force_shuffle', help='forces a shuffle')
+@bot.command(name='shuffle', help='forces a shuffle')
 #@commands.has_role('TC')
 async def force_shuffle(ctx):
-    await ctx.send('Forcing shuffle...')
-    await shuffle(ctx)
+    print(pool.ended)
+    if pool.ended:
+        await ctx.send('No on-going game.')
+    else:
+        if pool.rounds != None and pool.rounds == 0:
+            await ctx.send('No more rounds left!')
+            await end_game(ctx)
+            return
+        await ctx.send('Forcing shuffle...')
+        await ctx.send(f'Remaining rounds: {pool.rounds - 1}')
+        await shuffle(ctx)
 
 ''' Shuffles participants into random groups.
 '''
 async def shuffle(ctx):
-    if len(pool.participants) <= 3:
-        await ctx.send('Need at least 4 people to speed date :(((')
-        return
+    if pool.rounds:
+        pool.rounds -= 1
     guild = ctx.guild # get current server
     random.shuffle(pool.participants)
     random_joiner = None # member who gets to pick a group to join; if numbers are odd
@@ -107,18 +206,8 @@ async def shuffle(ctx):
         num_participants -= 1
     number_of_groups = num_participants / 2
     print(f'Number of groups: {number_of_groups}')
-
-    """ # test purposes bc i am one person lol i just needed to see if it would move me
-    if number_of_groups == 0:
-        # only one person being shuffled
-        channel_name = 'group0'
-        existing_channel = discord.utils.get(guild.channels, name=channel_name)
-        if not existing_channel:
-            existing_channel = await guild.create_voice_channel(channel_name)
-        await group[0].move_to(existing_channel)
-        return"""
         
-    pairs = [pool.participants[i:i+2] for i in range(0, num_participants, 2)]
+    pairs = [pool.participants[i:i+2] for i in range(0, num_participants, 2)] # change to +1 for testing purposes; add step of 2 to range
     if random_joiner: # there was an odd number
         pairs[random.randint(0, number_of_groups)].append(random_joiner)
     print(f'Groups: {pairs}')
@@ -130,7 +219,9 @@ async def shuffle(ctx):
             if not existing_channel:
                 print(f'Creating a new channel: {channel_name}')
                 existing_channel = await guild.create_voice_channel(channel_name)
+                pool.channels.append(existing_channel)
             await m.move_to(existing_channel)
+    
 
 ''' Bot command: removes participant from pool.
 ''' 
