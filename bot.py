@@ -134,7 +134,7 @@ async def begin_shuffle(ctx, channel_id=None):
     else: # timed shuffles
         if rounds == 'none':
             played = 1 # number of rounds played
-            while not pool.ended:#and len(pool.participants > 3):
+            while not pool.ended and len(pool.participants) > 3:
                 await ctx.send(f'Beginning round #{played}')
                 await shuffle(ctx) # TODO: set interval somehow
                 played += 1
@@ -142,7 +142,7 @@ async def begin_shuffle(ctx, channel_id=None):
         else:
             total_rounds = pool.rounds
             print(f'{total_rounds} rounds with intervals of {time_str} seconds.')
-            while pool.rounds > 0 and not pool.ended: # and len(pool.participants > 3): # idk if this is valid
+            while not pool.ended and len(pool.participants) > 3 and pool.rounds > 0: # idk if this is valid
                 await ctx.send(f'Beginning round #{total_rounds - pool.rounds + 1}')
                 await shuffle(ctx) # TODO: set interval somehow
                 await asyncio.sleep(pool.interval)
@@ -170,7 +170,7 @@ async def end_game(ctx):
 
     # delete all channels that were created
     for c in pool.channels:
-        await c.delete() # doesn't work TODO
+        await c.delete() 
     
     pool.reset_pool()
     await ctx.send('Cleanup completed :)')
