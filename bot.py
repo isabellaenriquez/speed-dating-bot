@@ -9,9 +9,27 @@ load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 GUILD = os.getenv('GUILD')
 
+class SpeedDatingPool():
+    def __init__(self, participants=[]):
+        self.participants = participants
+    
+    def remove_member(self, user):
+        if not user:
+            return False
+    
+        for i in range(len(self.participants)):
+            if user == self.participants[i]:
+                self.participants.pop(i)
+                return True
+        
+        return False
+
+pool = SpeedDatingPool()
+
 bot = Bot(command_prefix='!')
 
-participants = []
+
+
 
 ''' Bot command: Gets the number of members in a given Voice Channel id.
 '''
@@ -27,6 +45,11 @@ async def get_members(ctx, channel_id=None):
             return
         members = channel.members
         await ctx.send('Members in this channel: ' + str(len(members)))
+
+@bot.command(name='participants', help='lists participants in speed dating round')
+#@commands.has_role('TC')
+async def get_participants(ctx):
+    await ctx.send('Participants: ' + str(pool.participants))
 
 ''' Bot command: begins a speed dating group shuffle.
 '''
@@ -44,7 +67,8 @@ async def begin_shuffle(ctx, channel_id=None):
     if not channel:
         await ctx.send('Channel does not exist!')
         return
-    participants = channel.members
+    pool.participants = channel.members
+    print(f'Participants: {pool.participants}')
 
     # check if next message sent was by the author who sent the original command and in the same channel
     def check(m):
@@ -71,15 +95,15 @@ async def force_shuffle(ctx):
 ''' Shuffles participants into random groups.
 '''
 async def shuffle(ctx):
-    if len(participants) <= 3:
+    if len(pool.participants) <= 3:
         await ctx.send('Need at least 4 people to speed date :(((')
         return
     guild = ctx.guild # get current server
-    random.shuffle(participants)
+    random.shuffle(pool.participants)
     random_joiner = None # member who gets to pick a group to join; if numbers are odd
-    num_participants = len(participants) # even number of ppl get shuffled; if odd, last person can pick group
+    num_participants = len(pool.participants) # even number of ppl get shuffled; if odd, last person can pick group
     if num_participants % 2 != 0:
-        random_joiner = participants[-1]
+        random_joiner = pool.participants[-1]
         num_participants -= 1
     number_of_groups = num_participants / 2
     print(f'Number of groups: {number_of_groups}')
@@ -94,7 +118,7 @@ async def shuffle(ctx):
         await group[0].move_to(existing_channel)
         return"""
         
-    pairs = [participants[i:i+2] for i in range(0, num_participants, 2)]
+    pairs = [pool.participants[i:i+2] for i in range(0, num_participants, 2)]
     if random_joiner: # there was an odd number
         pairs[random.randint(0, number_of_groups)].append(random_joiner)
     print(f'Groups: {pairs}')
@@ -107,13 +131,28 @@ async def shuffle(ctx):
                 print(f'Creating a new channel: {channel_name}')
                 existing_channel = await guild.create_voice_channel(channel_name)
             await m.move_to(existing_channel)
-    
+
+''' Bot command: removes participant from pool.
+''' 
 @bot.command(name='remove', help='Removes member from list of participants.')
 #@commands.has_role('TC')
-async def remove_member(ctx, id=None):
-    if not id:
+async def remove_member(ctx, u_id=None):
+    print('Removing...')
+    if not u_id:
         await ctx.send('Please specify which member to remove!')
-    # actually write this lol
+        return
+    guild = ctx.guild
+    removed_user = await guild.fetch_member(u_id)
+    print(removed_user)
+    if not removed_user:
+        await ctx.send('Please send valid user ID!')
+        return
+    success = pool.remove_member(removed_user)
+    if success:
+        print(f'Removed {removed_user}')
+        await ctx.send(f'Removed participant {removed_user.name}')
+    else:
+        await ctx.send(f'{removed_user.name} was already out of the pool!')
 
 @bot.event
 async def on_ready():
