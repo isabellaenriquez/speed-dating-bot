@@ -17,6 +17,7 @@ class SpeedDatingPool():
         self.channels = []
         self.rounds = None
         self.interval = None
+        self.main_channel = None
     
     def reset_pool(self):
         self.participants = []
@@ -24,6 +25,7 @@ class SpeedDatingPool():
         self.channels = []
         self.rounds = None
         self.interval = None
+        self.main_channel = None
     
     def remove_member(self, user):
         if not user:
@@ -50,11 +52,10 @@ pool = SpeedDatingPool()
 
 bot = Bot(command_prefix='!')
 
-
 ''' Bot command: Gets the number of members in a given Voice Channel id.
 '''
 @bot.command(name='members', help='Lists number of members in the channel corresponding to the given ID')
-@commands.has_role('TC')
+#@commands.has_role('TC')
 async def get_members(ctx, channel_id=None):
     if not channel_id:
         await ctx.send('Please specify which channel you\'d like to check!')
@@ -66,15 +67,17 @@ async def get_members(ctx, channel_id=None):
         members = channel.members
         await ctx.send('Members in this channel: ' + str(len(members)))
 
+''' Bot command: Sends a list of the participants registered in the current game.
+'''
 @bot.command(name='participants', help='Lists the participants in the current speed dating game')
-@commands.has_role('TC')
+#@commands.has_role('TC')
 async def get_participants(ctx):
     if pool.ended:
         await ctx.send('No on-going game.')
         return
     p_string = ''
     for i, p in enumerate(pool.participants):
-        if i == len(pool.participants):
+        if i == len(pool.participants) - 1:
             p_string += p.name
         else:
             p_string += p.name + ', '
@@ -83,7 +86,7 @@ async def get_participants(ctx):
 ''' Bot command: begins a speed dating group shuffle.
 '''
 @bot.command(name='begin', help='Starts a speed dating game with the users in the specified VC (by ID)')
-@commands.has_role('TC')
+#@commands.has_role('TC')
 async def begin_shuffle(ctx, channel_id=None):
     # command author + channel
     author = ctx.message.author
@@ -99,8 +102,15 @@ async def begin_shuffle(ctx, channel_id=None):
     if not channel:
         await ctx.send('Channel does not exist!')
         return
+    pool.main_channel = channel
     pool.participants = channel.members
     print(f'Participants: {pool.participants}')
+
+    
+    if not pool_is_valid():
+        await ctx.send('Sorry, we need 4 or more people to play :(')
+        pool.reset_pool() # just in case
+        return
 
     # check if next message sent was by the author who sent the original command and in the same channel
     def check(m):
@@ -168,12 +178,18 @@ async def begin_shuffle(ctx, channel_id=None):
     
         if not pool.ended: # game wasn't manually ended or # of participants not enough
             await end_game(ctx)
-        
+
+''' Returns true if there are 4+ participants, false otherwise.
+'''    
+def pool_is_valid():
+    if len(pool.participants) > 3:
+        return True
+    return False
         
 ''' Bot command: force end game.
 '''
 @bot.command(name='end', help='Forces the game to end')
-@commands.has_role('TC')
+#@commands.has_role('TC')
 async def force_end(ctx):
     if pool.ended:
         await ctx.send('No on-going game.')
@@ -186,11 +202,17 @@ async def end_game(ctx):
     if len(pool.participants) <= 3:
         await ctx.send('Ended speed dating because we need at least 4 people :\'(')
     else:
-        await ctx.send('Speed dating ended! Thanks for participating!')
-
+        await ctx.send('Speed dating ended! Thanks for participating!') 
+    
+    for p in pool.participants:
+        try:
+            await p.move_to(pool.main_channel)
+        except:
+            await ctx.send(f'Hey <@{p.id}>! I couldn\'t find you :( Please join the main channel again!')
+    
     # delete all channels that were created
     for c in pool.channels:
-        await c.delete() 
+        await c.delete()
     
     pool.reset_pool()
     await ctx.send('Cleanup completed :)')
@@ -198,7 +220,7 @@ async def end_game(ctx):
 ''' Bot command: forces a shuffle.
 '''
 @bot.command(name='shuffle', help='Forces a shuffle')
-@commands.has_role('TC')
+#@commands.has_role('TC')
 async def force_shuffle(ctx):
     print(pool.ended)
     if pool.ended:
@@ -226,28 +248,34 @@ async def shuffle(ctx):
         random_joiner = pool.participants[-1]
         num_participants -= 1
     number_of_groups = num_participants / 2
-    print(f'Number of groups: {number_of_groups}')
-        
+    #print(f'Number of groups: {number_of_groups}')
+    
     pairs = [pool.participants[i:i+2] for i in range(0, num_participants, 2)] # change to +1 for testing purposes; add step of 2 to range
     if random_joiner: # there was an odd number
-        pairs[random.randint(0, number_of_groups)].append(random_joiner)
+        try:
+            pairs[random.randint(0, int(number_of_groups) - 1)].append(random_joiner)
+        except IndexError:
+            await ctx.send(f'<@{random_joiner.id}>, you\'ve been selected randomly to join a random group! The world is your oyster :)')
     print(f'Groups: {pairs}')
 
     for i, p in enumerate(pairs):
         for m in p: # move each pair to respective channel
             channel_name = 'group' + str(i) # name of channel is groupi, where i is the pair number
             existing_channel = discord.utils.get(guild.channels, name=channel_name)
-            if not existing_channel:
+            if not existing_channel: # not created yet
                 print(f'Creating a new channel: {channel_name}')
                 existing_channel = await guild.create_voice_channel(channel_name)
                 pool.channels.append(existing_channel)
-            await m.move_to(existing_channel)
+            try:
+                await m.move_to(existing_channel)
+            except:
+                await ctx.send(f'<@{m.id}> I couldn\'t find you! Please join {channel_name}!')
     
 
 ''' Bot command: removes participant from pool.
 ''' 
 @bot.command(name='remove', help='Removes member from list of participants using that guild member\'s ID')
-@commands.has_role('TC')
+#@commands.has_role('TC')
 async def remove_member(ctx, u_id=None):
     if pool.ended:
         await ctx.send('No on-going game to remove from!')
@@ -265,14 +293,14 @@ async def remove_member(ctx, u_id=None):
     success = pool.remove_member(removed_user)
     if success:
         print(f'Removed {removed_user}!')
-        await ctx.send(f'Removed participant {removed_user.name}')
+        await ctx.send(f'Removed participant <@{u_id}>. I\'ll miss you :(')
     else:
         await ctx.send(f'{removed_user.name} was already out of the pool!')
 
 ''' Bot command: adds participant to pool.
 '''
 @bot.command(name='add', help='Adds a member to the list of participants using that guild member\'s ID')
-@commands.has_role('TC')
+#@commands.has_role('TC')
 async def add_member(ctx, u_id=None):
     if pool.ended:
         await ctx.send('No on-going game to add to.')
@@ -290,14 +318,14 @@ async def add_member(ctx, u_id=None):
     success = pool.add_member(added_user)
     if success:
         print(f'Added {added_user}!')
-        await ctx.send(f'Added participant {added_user.name}!')
+        await ctx.send(f'Added participant <@{u_id}>! Welcome to speed dating! ;)))')
     else:
         await ctx.send(f'{added_user.name} was already in the pool!')
 
 ''' Bot command: shutdowns bot.
 '''
 @bot.command(name='goodbye', help='Log bot out')
-@commands.has_role('TC')
+#@commands.has_role('TC')
 async def log_out(ctx):
     await ctx.send('Goodbye, thanks for having me!')
     await bot.close()
