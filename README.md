@@ -1,6 +1,9 @@
 # speed-dating-bot
 A Discord bot that simulates speed dating.
 
+## Credits
+Countdown functionality accredited to <a href="http://github.com/asns2001">Sanindie Silva</a>.
+
 ## Setting up
 1. `git clone` this repo.
 2. `cd` into the local folder.
