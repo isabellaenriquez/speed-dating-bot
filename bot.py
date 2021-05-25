@@ -55,7 +55,7 @@ bot = Bot(command_prefix='!')
 ''' Bot command: Gets the number of members in a given Voice Channel id.
 '''
 @bot.command(name='members', help='Lists number of members in the channel corresponding to the given ID')
-#@commands.has_role('TC')
+@commands.has_role('TC')
 async def get_members(ctx, channel_id=None):
     if not channel_id:
         await ctx.send('Please specify which channel you\'d like to check!')
@@ -70,7 +70,7 @@ async def get_members(ctx, channel_id=None):
 ''' Bot command: Sends a list of the participants registered in the current game.
 '''
 @bot.command(name='participants', help='Lists the participants in the current speed dating game')
-#@commands.has_role('TC')
+@commands.has_role('TC')
 async def get_participants(ctx):
     if pool.ended:
         await ctx.send('No on-going game.')
@@ -86,7 +86,7 @@ async def get_participants(ctx):
 ''' Bot command: begins a speed dating group shuffle.
 '''
 @bot.command(name='begin', help='Starts a speed dating game with the users in the specified VC (by ID)')
-#@commands.has_role('TC')
+@commands.has_role('TC')
 async def begin_shuffle(ctx, channel_id=None):
     # command author + channel
     author = ctx.message.author
@@ -159,25 +159,51 @@ async def begin_shuffle(ctx, channel_id=None):
         await shuffle(ctx)
         await ctx.send('To shuffle again, the command author must type \'!shuffle\' in this channel. To end, type \'!end\'.')
     else: # timed shuffles
+        minus_15s = pool.interval - 15
         if rounds == 'none':
             print('number of rounds unset.')
             played = 1 # number of rounds played
             while not pool.ended and len(pool.participants) > 3:
                 await ctx.send(f'Beginning round #{played}')
-                await shuffle(ctx) # TODO: set interval somehow
+                await shuffle(ctx) 
+                await ctx.send('Finished shuffling. Beginning timer now.')
                 played += 1
-                await asyncio.sleep(pool.interval)
+
+                # timing
+                if pool.interval > 15:
+                    await asyncio.sleep(minus_15s)
+                    await countdown(ctx, 15)    # countdown last 15 seconds
+                else:
+                    await countdown(ctx, pool.interval)   # if initial interval <= 15, countdown all of it
         else:
             total_rounds = pool.rounds
             print(f'{total_rounds} rounds with intervals of {time_str} seconds.')
-            while not pool.ended and len(pool.participants) > 3 and pool.rounds > 0: # idk if this is valid
+            while not pool.ended and len(pool.participants) > 3 and pool.rounds > 0: 
                 await ctx.send(f'Beginning round #{total_rounds - pool.rounds + 1}')
-                await shuffle(ctx) # TODO: set interval somehow
-                await asyncio.sleep(pool.interval)
-            
+                await shuffle(ctx)
+                await ctx.send('Finished shuffling. Beginning timer now.')
+
+                # timing
+                if pool.interval > 15:
+                    await asyncio.sleep(minus_15s)
+                    await countdown(ctx, 15)     
+                else:
+                    await countdown(ctx, pool.interval)       
     
         if not pool.ended: # game wasn't manually ended or # of participants not enough
             await end_game(ctx)
+
+async def countdown(ctx, seconds):
+    msg = await ctx.send("WARNING! Time left: "+ str(seconds) + " seconds.")
+
+    time = int(seconds)
+    for x in range(1,time+1):
+        await asyncio.sleep(1)
+        await msg.edit(content = "WARNING! Time left: "+ str(time-x) + " seconds.")
+
+    await asyncio.sleep(1)
+    await msg.edit(content = 'Round ended.')
+
 
 ''' Returns true if there are 4+ participants, false otherwise.
 '''    
@@ -189,7 +215,7 @@ def pool_is_valid():
 ''' Bot command: force end game.
 '''
 @bot.command(name='end', help='Forces the game to end')
-#@commands.has_role('TC')
+@commands.has_role('TC')
 async def force_end(ctx):
     if pool.ended:
         await ctx.send('No on-going game.')
@@ -220,7 +246,7 @@ async def end_game(ctx):
 ''' Bot command: forces a shuffle.
 '''
 @bot.command(name='shuffle', help='Forces a shuffle')
-#@commands.has_role('TC')
+@commands.has_role('TC')
 async def force_shuffle(ctx):
     print(pool.ended)
     if pool.ended:
@@ -242,21 +268,21 @@ async def shuffle(ctx):
         pool.rounds -= 1
     guild = ctx.guild # get current server
     random.shuffle(pool.participants)
-    random_joiner = None # member who gets to pick a group to join; if numbers are odd
-    num_participants = len(pool.participants) # even number of ppl get shuffled; if odd, last person can pick group
+    random_joiner = None # if numbers are odd
+    num_participants = len(pool.participants) # even number of ppl get shuffled; if odd, last person is put in random group
     if num_participants % 2 != 0:
         random_joiner = pool.participants[-1]
         num_participants -= 1
-    number_of_groups = num_participants / 2
+    number_of_groups = num_participants // 2 # num_participants should be even but do int division just in case
     #print(f'Number of groups: {number_of_groups}')
     
     pairs = [pool.participants[i:i+2] for i in range(0, num_participants, 2)] # change to +1 for testing purposes; add step of 2 to range
-    if random_joiner: # there was an odd number
+    if random_joiner: # odd last person will be put in a random group
         try:
             pairs[random.randint(0, int(number_of_groups) - 1)].append(random_joiner)
-        except IndexError:
-            await ctx.send(f'<@{random_joiner.id}>, you\'ve been selected randomly to join a random group! The world is your oyster :)')
-    print(f'Groups: {pairs}')
+        except:
+            await ctx.send(f'<@{random_joiner.id}>, I couldn\'t find you! Since you were picked as the odd last person, join any group! The world is your oyster :)')
+    #print(f'Groups: {pairs}')
 
     for i, p in enumerate(pairs):
         for m in p: # move each pair to respective channel
@@ -275,7 +301,7 @@ async def shuffle(ctx):
 ''' Bot command: removes participant from pool.
 ''' 
 @bot.command(name='remove', help='Removes member from list of participants using that guild member\'s ID')
-#@commands.has_role('TC')
+@commands.has_role('TC')
 async def remove_member(ctx, u_id=None):
     if pool.ended:
         await ctx.send('No on-going game to remove from!')
@@ -300,7 +326,7 @@ async def remove_member(ctx, u_id=None):
 ''' Bot command: adds participant to pool.
 '''
 @bot.command(name='add', help='Adds a member to the list of participants using that guild member\'s ID')
-#@commands.has_role('TC')
+@commands.has_role('TC')
 async def add_member(ctx, u_id=None):
     if pool.ended:
         await ctx.send('No on-going game to add to.')
@@ -325,7 +351,7 @@ async def add_member(ctx, u_id=None):
 ''' Bot command: shutdowns bot.
 '''
 @bot.command(name='goodbye', help='Log bot out')
-#@commands.has_role('TC')
+@commands.has_role('TC')
 async def log_out(ctx):
     await ctx.send('Goodbye, thanks for having me!')
     await bot.close()
